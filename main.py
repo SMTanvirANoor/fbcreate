@@ -1,110 +1,66 @@
-import requests
+import time
 import random
-import string
 from faker import Faker
-from bs4 import BeautifulSoup
+from playwright.sync_api import sync_playwright
 
 fake = Faker()
 
-# Facebook URLs
-FB_SIGNUP_URL = "https://www.facebook.com/r.php?entry_point=login"
-FB_CONFIRM_URL = "https://www.facebook.com/confirmemail.php"
-
-# Random User-Agent List
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 14_2 like Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/537.36",
-]
-
 # Generate Random User Data
-def generate_user():
-    first_name = fake.first_name()
-    last_name = fake.last_name()
-    email = input("\n📧 Enter your email: ")  # Manual email input
-    password = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
-    dob = f"{random.randint(1, 28)}/{random.randint(1, 12)}/{random.randint(1985, 2003)}"
-    gender = input("🚻 Enter gender (male/female): ").strip().lower()
+first_name = fake.first_name()
+last_name = fake.last_name()
+password = fake.password(length=12)
+dob_day = str(random.randint(1, 28))
+dob_month = str(random.randint(1, 12))
+dob_year = str(random.randint(1985, 2003))
 
-    return {
-        "first_name": first_name,
-        "last_name": last_name,
-        "email": email,
-        "password": password,
-        "dob": dob,
-        "gender": gender,
-    }
+# Get manual email input
+email = input("\n📧 Enter your email: ")
+gender = input("🚻 Enter gender (male/female): ").strip().lower()
 
-# Extract CSRF Tokens
-def get_csrf_tokens(session):
-    response = session.get("https://www.facebook.com/")
-    soup = BeautifulSoup(response.text, "html.parser")
-    
-    fb_dtsg = soup.find("input", {"name": "fb_dtsg"})["value"] if soup.find("input", {"name": "fb_dtsg"}) else None
-    jazoest = soup.find("input", {"name": "jazoest"})["value"] if soup.find("input", {"name": "jazoest"}) else None
-    
-    return fb_dtsg, jazoest
+# Start Playwright
+with sync_playwright() as p:
+    browser = p.chromium.launch(headless=False)  # Set headless=True if you don't want UI
+    page = browser.new_page()
 
-# Simulate Signup Request
-def signup_facebook():
-    user_data = generate_user()
-    
-    session = requests.Session()
-    fb_dtsg, jazoest = get_csrf_tokens(session)
+    # Open Facebook Signup Page
+    page.goto("https://www.facebook.com/r.php?entry_point=login")
+    time.sleep(3)
 
-    headers = {
-        "User-Agent": random.choice(USER_AGENTS),
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Referer": "https://www.facebook.com/",
-    }
+    # Fill the form
+    page.fill("input[name='firstname']", first_name)
+    page.fill("input[name='lastname']", last_name)
+    page.fill("input[name='reg_email__']", email)
+    page.fill("input[name='reg_passwd__']", password)
+    page.select_option("select[name='birthday_day']", dob_day)
+    page.select_option("select[name='birthday_month']", dob_month)
+    page.select_option("select[name='birthday_year']", dob_year)
 
-    payload = {
-        "firstname": user_data["first_name"],
-        "lastname": user_data["last_name"],
-        "reg_email__": user_data["email"],
-        "reg_passwd__": user_data["password"],
-        "birthday_day": user_data["dob"].split("/")[0],
-        "birthday_month": user_data["dob"].split("/")[1],
-        "birthday_year": user_data["dob"].split("/")[2],
-        "sex": "1" if user_data["gender"] == "female" else "2",
-        "submit": "Sign Up",
-        "fb_dtsg": fb_dtsg,
-        "jazoest": jazoest,
-    }
+    # Select Gender
+    if gender == "male":
+        page.click("input[value='2']")
+    elif gender == "female":
+        page.click("input[value='1']")
 
-    response = session.post(FB_SIGNUP_URL, headers=headers, data=payload)
+    # Submit the form
+    page.click("button[name='websubmit']")
+    time.sleep(5)
 
-    print("\n🔹 **Signup Response:**")
-    print(response.text[:1000])  # Debugging: Show first 1000 chars of response
+    print(f"\n✅ Signup Submitted! Check {email} for OTP.")
 
-    if "checkpoint" in response.text.lower():
-        print("🚨 Facebook detected a security checkpoint (possible block or phone verification needed).")
-        return
+    # Manually enter OTP
+    otp_code = input("\n📥 Enter the OTP received in email: ")
 
-    if response.status_code == 200:
-        print(f"\n✅ Signup Successful! Check your email for OTP.")
-        print(f"🔑 Password: {user_data['password']}")
+    # Fill in OTP and confirm
+    page.fill("input[name='code']", otp_code)
+    page.press("input[name='code']", "Enter")
 
-        otp_code = input("\n📥 Enter the OTP received in email: ")
+    time.sleep(5)
 
-        confirm_payload = {
-            "code": otp_code,
-            "fb_dtsg": fb_dtsg,
-            "jazoest": jazoest,
-            "submit[Submit Code]": "Confirm"
-        }
-
-        confirm_response = session.post(FB_CONFIRM_URL, headers=headers, data=confirm_payload)
-
-        print("\n🔹 **OTP Submission Response:**")
-        print(confirm_response.text[:1000])  # Debugging: Show response from Facebook
-
-        if "confirmed" in confirm_response.text.lower():
-            print("✅ Email Confirmed Successfully!")
-        else:
-            print("❌ Email Confirmation Failed! Check OTP and try again.")
-
+    # Check if confirmation was successful
+    if "confirmed" in page.content().lower():
+        print("✅ Email Confirmed Successfully!")
     else:
-        print(f"\n❌ Signup Failed ({response.status_code}) - {response.text}")
+        print("❌ Email Confirmation Failed! Check OTP and try again.")
 
-# Run Signup
-signup_facebook()
+    input("\nPress Enter to close the browser...")
+    browser.close()
