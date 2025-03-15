@@ -1,11 +1,13 @@
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 import time
 import random
 from faker import Faker
-from playwright.sync_api import sync_playwright
 
 fake = Faker()
 
-# Generate Random User Data
+# Random user details
 first_name = fake.first_name()
 last_name = fake.last_name()
 password = fake.password(length=12)
@@ -13,54 +15,56 @@ dob_day = str(random.randint(1, 28))
 dob_month = str(random.randint(1, 12))
 dob_year = str(random.randint(1985, 2003))
 
-# Get manual email input
+# Manually enter email
 email = input("\n📧 Enter your email: ")
 gender = input("🚻 Enter gender (male/female): ").strip().lower()
 
-# Start Playwright
-with sync_playwright() as p:
-    browser = p.chromium.launch(headless=False)  # Set headless=True if you don't want UI
-    page = browser.new_page()
+# Setup Selenium WebDriver (Make sure you have Chrome and Chromedriver installed)
+options = webdriver.ChromeOptions()
+options.add_argument("--start-maximized")  # Open browser in fullscreen
+driver = webdriver.Chrome(options=options)
 
-    # Open Facebook Signup Page
-    page.goto("https://www.facebook.com/r.php?entry_point=login")
-    time.sleep(3)
+# Open Facebook Signup Page
+driver.get("https://www.facebook.com/r.php?entry_point=login")
+time.sleep(3)  # Wait for page to load
 
-    # Fill the form
-    page.fill("input[name='firstname']", first_name)
-    page.fill("input[name='lastname']", last_name)
-    page.fill("input[name='reg_email__']", email)
-    page.fill("input[name='reg_passwd__']", password)
-    page.select_option("select[name='birthday_day']", dob_day)
-    page.select_option("select[name='birthday_month']", dob_month)
-    page.select_option("select[name='birthday_year']", dob_year)
+# Fill in the signup form
+driver.find_element(By.NAME, "firstname").send_keys(first_name)
+driver.find_element(By.NAME, "lastname").send_keys(last_name)
+driver.find_element(By.NAME, "reg_email__").send_keys(email)
+driver.find_element(By.NAME, "reg_passwd__").send_keys(password)
+driver.find_element(By.NAME, "birthday_day").send_keys(dob_day)
+driver.find_element(By.NAME, "birthday_month").send_keys(dob_month)
+driver.find_element(By.NAME, "birthday_year").send_keys(dob_year)
 
-    # Select Gender
-    if gender == "male":
-        page.click("input[value='2']")
-    elif gender == "female":
-        page.click("input[value='1']")
+# Select gender
+if gender == "male":
+    driver.find_element(By.XPATH, "//input[@value='2']").click()
+elif gender == "female":
+    driver.find_element(By.XPATH, "//input[@value='1']").click()
 
-    # Submit the form
-    page.click("button[name='websubmit']")
-    time.sleep(5)
+# Submit the form
+driver.find_element(By.NAME, "websubmit").click()
+time.sleep(5)  # Wait for processing
 
-    print(f"\n✅ Signup Submitted! Check {email} for OTP.")
+print(f"\n✅ Signup Submitted! Check {email} for OTP.")
 
-    # Manually enter OTP
-    otp_code = input("\n📥 Enter the OTP received in email: ")
+# Wait for OTP input manually
+otp_code = input("\n📥 Enter the OTP received in email: ")
 
-    # Fill in OTP and confirm
-    page.fill("input[name='code']", otp_code)
-    page.press("input[name='code']", "Enter")
+# Fill in OTP
+otp_input = driver.find_element(By.NAME, "code")  # Locate OTP field
+otp_input.send_keys(otp_code)
+otp_input.send_keys(Keys.RETURN)
 
-    time.sleep(5)
+time.sleep(5)  # Wait for confirmation
 
-    # Check if confirmation was successful
-    if "confirmed" in page.content().lower():
-        print("✅ Email Confirmed Successfully!")
-    else:
-        print("❌ Email Confirmation Failed! Check OTP and try again.")
+# Check if signup was successful
+if "confirmed" in driver.page_source.lower():
+    print("✅ Email Confirmed Successfully!")
+else:
+    print("❌ Email Confirmation Failed! Check OTP and try again.")
 
-    input("\nPress Enter to close the browser...")
-    browser.close()
+# Keep browser open for review
+input("\nPress Enter to close the browser...")
+driver.quit()
